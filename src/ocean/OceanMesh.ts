@@ -11,13 +11,13 @@ interface TileData {
 }
 
 const WORLD_SIZE = 200;
-const GRID_SIZE = 8;
+const GRID_SIZE = 4;
 const TILE_SIZE = WORLD_SIZE / GRID_SIZE;
 
 const LOD_CONFIGS = [
-  { segments: 256, distance: 200, name: 'LOD0' },
-  { segments: 128, distance: 800, name: 'LOD1' },
-  { segments: 64, distance: Infinity, name: 'LOD2' },
+  { segments: 128, distance: 200, name: 'LOD0' },
+  { segments: 64, distance: 800, name: 'LOD1' },
+  { segments: 32, distance: Infinity, name: 'LOD2' },
 ];
 
 export class OceanMesh extends THREE.Group {

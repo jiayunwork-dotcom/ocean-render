@@ -11,7 +11,7 @@ export default function ControlPanel() {
   return (
     <div
       className={cn(
-        'fixed top-0 right-0 h-full z-40 transition-all duration-300 ease-in-out',
+        'fixed top-0 right-0 h-full z-50 transition-all duration-300 ease-in-out',
         collapsed ? 'w-10' : 'w-[320px]'
       )}
     >

@@ -147,7 +147,7 @@ export class OceanFFT {
   private prevWindDirX: number = -1;
   private prevWindDirZ: number = -1;
 
-  constructor(renderer: THREE.WebGLRenderer, N: number = 128, size: number = 200) {
+  constructor(renderer: THREE.WebGLRenderer, N: number = 64, size: number = 200) {
     this.N = N;
     this.size = size;
     this.renderer = renderer;
@@ -234,11 +234,11 @@ export class OceanFFT {
     const k2 = kLen * kLen;
     const k4 = k2 * k2;
 
-    const A = 3.0;
+    const A = 8.0;
 
     let spectrum = (A * Math.exp(-1 / (k2 * L * L)) * kDotW * kDotW) / k4;
 
-    const lambda = 0.001;
+    const lambda = 0.0001;
     spectrum *= Math.exp(-k2 * lambda * lambda);
 
     return spectrum;

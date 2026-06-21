@@ -17,6 +17,9 @@ export default {
         display: ['Orbitron', 'sans-serif'],
         body: ['Inter', 'sans-serif'],
       },
+      zIndex: {
+        '45': '45',
+      },
     },
   },
   plugins: [],

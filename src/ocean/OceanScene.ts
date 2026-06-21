@@ -85,7 +85,7 @@ export class OceanScene {
       ? THREE.ACESFilmicToneMapping
       : THREE.ReinhardToneMapping;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(1);
     this.renderer.setSize(canvas.clientWidth, canvas.clientHeight, false);
 
     this.scene = new THREE.Scene();
@@ -347,7 +347,8 @@ export class OceanScene {
       this.sunDir,
       this.sunColor,
       this.camera.position,
-      ships
+      ships,
+      environment.windSpeed
     );
 
     this.oceanMesh.setWireframe(render.wireframe);

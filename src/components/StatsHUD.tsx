@@ -25,7 +25,7 @@ export default function StatsHUD() {
   const triangles = useAppStore((state) => state.stats.triangles);
 
   return (
-    <div className="fixed bottom-4 right-4 z-50">
+    <div className="fixed bottom-4 right-4 z-45 pointer-events-none">
       <div className={cn('glass-panel hud-corner p-3 min-w-[180px]')}>
         <div className="flex flex-col gap-2">
           <div className="flex items-center justify-between gap-3">

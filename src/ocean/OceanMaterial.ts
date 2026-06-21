@@ -58,12 +58,17 @@ export class OceanMaterial extends THREE.ShaderMaterial {
     sunDir: THREE.Vector3,
     sunColor: THREE.Color,
     cameraPos: THREE.Vector3,
-    ships: Ship[]
+    ships: Ship[],
+    windSpeed: number
   ): void {
     this.uniforms.uTime.value = time;
     this.uniforms.uSunDir.value.copy(sunDir);
     this.uniforms.uSunColor.value.copy(sunColor);
     this.uniforms.uCameraPos.value.copy(cameraPos);
+
+    const windFactor = Math.max(windSpeed / 10, 0.5);
+    this.uniforms.uDisplacementScale.value = 0.5 + windFactor * 1.5;
+    this.uniforms.uChoppyFactor.value = 0.5 + windFactor * 0.8;
 
     this.uniforms.uShipCount.value = Math.min(ships.length, 3);
 
