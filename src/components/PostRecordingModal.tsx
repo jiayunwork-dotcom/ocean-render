@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { Download, Play, X, Clock, Film } from 'lucide-react';
+import { Download, Play, X, Clock, Film, Plus } from 'lucide-react';
 import type { RecordingData } from '@/store/recordingTypes';
 import { cn } from '@/lib/utils';
 
@@ -7,6 +7,7 @@ interface PostRecordingModalProps {
   recordingData: RecordingData;
   onSave: () => void;
   onReplay: () => void;
+  onAddToLibrary: () => void;
   onClose: () => void;
 }
 
@@ -26,6 +27,7 @@ export default function PostRecordingModal({
   recordingData,
   onSave,
   onReplay,
+  onAddToLibrary,
   onClose,
 }: PostRecordingModalProps) {
   const { metadata } = recordingData;
@@ -95,28 +97,41 @@ export default function PostRecordingModal({
           </div>
         </div>
 
-        <div className="px-5 py-4 border-t border-ocean-foam/10 flex gap-3">
+        <div className="px-5 py-4 border-t border-ocean-foam/10 flex flex-col gap-2">
+          <div className="flex gap-3">
+            <button
+              onClick={onSave}
+              className={cn(
+                'flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg',
+                'bg-ocean-foam/10 border border-ocean-foam/20 text-ocean-foam',
+                'hover:bg-ocean-foam/15 hover:border-ocean-foam/30 transition-all'
+              )}
+            >
+              <Download size={16} />
+              <span className="text-sm font-medium">保存为JSON</span>
+            </button>
+            <button
+              onClick={onReplay}
+              className={cn(
+                'flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg',
+                'bg-green-500/20 border border-green-400/40 text-green-400',
+                'hover:bg-green-500/30 hover:border-green-400/60 transition-all'
+              )}
+            >
+              <Play size={16} />
+              <span className="text-sm font-medium">立即回放</span>
+            </button>
+          </div>
           <button
-            onClick={onSave}
+            onClick={onAddToLibrary}
             className={cn(
-              'flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg',
-              'bg-ocean-foam/10 border border-ocean-foam/20 text-ocean-foam',
-              'hover:bg-ocean-foam/15 hover:border-ocean-foam/30 transition-all'
+              'w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg',
+              'bg-blue-500/20 border border-blue-400/40 text-blue-400',
+              'hover:bg-blue-500/30 hover:border-blue-400/60 transition-all'
             )}
           >
-            <Download size={16} />
-            <span className="text-sm font-medium">保存为JSON</span>
-          </button>
-          <button
-            onClick={onReplay}
-            className={cn(
-              'flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-lg',
-              'bg-green-500/20 border border-green-400/40 text-green-400',
-              'hover:bg-green-500/30 hover:border-green-400/60 transition-all'
-            )}
-          >
-            <Play size={16} />
-            <span className="text-sm font-medium">立即回放</span>
+            <Plus size={16} />
+            <span className="text-sm font-medium">加入片段库</span>
           </button>
         </div>
       </div>

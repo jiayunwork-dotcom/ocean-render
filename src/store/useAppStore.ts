@@ -6,6 +6,9 @@ import type {
   RecordingFrame,
   RecordingData,
   PlaybackSpeed,
+  RecordingEntry,
+  CropState,
+  ComparisonState,
 } from './recordingTypes';
 import { PLAYBACK_SPEEDS } from './recordingTypes';
 
@@ -69,6 +72,10 @@ export interface AppState {
   timeline: TimelineState;
   recording: RecordingState;
   playback: PlaybackState;
+  recordingLibrary: RecordingEntry[];
+  selectedRecordingIds: Set<string>;
+  crop: CropState;
+  comparison: ComparisonState;
 
   setWindSpeed: (value: number, fromTimeline?: boolean) => void;
   setWindDirection: (value: number) => void;
@@ -104,7 +111,7 @@ export interface AppState {
   addRecordingFrame: (frame: RecordingFrame) => boolean;
   setRecordingDuration: (duration: number) => void;
 
-  startPlayback: (data: RecordingData) => void;
+  startPlayback: (data: RecordingData, recordingId?: string) => void;
   stopPlayback: () => void;
   pausePlayback: () => void;
   resumePlayback: () => void;
@@ -112,11 +119,33 @@ export interface AppState {
   setPlaybackSpeed: (speed: PlaybackSpeed) => void;
   setExporting: (exporting: boolean) => void;
   setExportProgress: (progress: number) => void;
+
+  addRecordingToLibrary: (data: RecordingData) => string | null;
+  removeRecordingFromLibrary: (id: string) => void;
+  toggleRecordingSelection: (id: string) => void;
+  clearRecordingSelection: () => void;
+  getRecordingById: (id: string) => RecordingEntry | undefined;
+  renameRecording: (id: string, name: string) => void;
+  mergeRecordings: (firstId: string, secondId: string) => string | null;
+  startPlaybackById: (id: string) => void;
+
+  startCropping: (recordingId: string) => void;
+  setCropStart: (frame: number) => void;
+  setCropEnd: (frame: number) => void;
+  applyCrop: () => boolean;
+  cancelCrop: () => void;
+
+  startComparison: (leftId: string, rightId: string) => void;
+  stopComparison: () => void;
+  setComparisonPlaying: (playing: boolean) => void;
+  setComparisonFrame: (index: number) => void;
 }
 
 const MAX_SHIPS = 3;
+const MAX_RECORDINGS = 5;
 
 const generateShipId = (): string => `ship_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+const generateRecordingId = (): string => `rec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
 export const useAppStore = create<AppState>((set, get) => ({
   environment: {
@@ -161,10 +190,27 @@ export const useAppStore = create<AppState>((set, get) => ({
     isPlaying: false,
     isPaused: false,
     playbackData: null,
+    playbackRecordingId: null,
     currentFrameIndex: 0,
     playbackSpeed: 1,
     isExporting: false,
     exportProgress: 0,
+  },
+  recordingLibrary: [],
+  selectedRecordingIds: new Set<string>(),
+  crop: {
+    isCropping: false,
+    recordingId: null,
+    startFrame: 0,
+    endFrame: 0,
+  },
+  comparison: {
+    isComparing: false,
+    leftRecordingId: null,
+    rightRecordingId: null,
+    isPlaying: false,
+    currentFrameIndex: 0,
+    totalFrames: 0,
   },
 
   setWindSpeed: (value, fromTimeline = false) =>
@@ -460,12 +506,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     })),
 
-  startPlayback: (data) =>
+  startPlayback: (data, recordingId) =>
     set({
       playback: {
         isPlaying: true,
         isPaused: false,
         playbackData: data,
+        playbackRecordingId: recordingId ?? null,
         currentFrameIndex: 0,
         playbackSpeed: 1,
         isExporting: false,
@@ -479,6 +526,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         isPlaying: false,
         isPaused: false,
         playbackData: null,
+        playbackRecordingId: null,
         currentFrameIndex: 0,
         playbackSpeed: 1,
         isExporting: false,
@@ -532,6 +580,266 @@ export const useAppStore = create<AppState>((set, get) => ({
       playback: {
         ...state.playback,
         exportProgress: Math.max(0, Math.min(100, progress)),
+      },
+    })),
+
+  addRecordingToLibrary: (data) => {
+    const state = get();
+    if (state.recordingLibrary.length >= MAX_RECORDINGS) {
+      return null;
+    }
+    const id = generateRecordingId();
+    const entry: RecordingEntry = { id, data };
+    set({ recordingLibrary: [...state.recordingLibrary, entry] });
+    return id;
+  },
+
+  removeRecordingFromLibrary: (id) =>
+    set((state) => {
+      const newSelected = new Set(state.selectedRecordingIds);
+      newSelected.delete(id);
+      const wasPlaying = state.playback.playbackRecordingId === id;
+      return {
+        recordingLibrary: state.recordingLibrary.filter((r) => r.id !== id),
+        selectedRecordingIds: newSelected,
+        playback: wasPlaying
+          ? {
+              isPlaying: false,
+              isPaused: false,
+              playbackData: null,
+              playbackRecordingId: null,
+              currentFrameIndex: 0,
+              playbackSpeed: 1,
+              isExporting: false,
+              exportProgress: 0,
+            }
+          : state.playback,
+        crop:
+          state.crop.recordingId === id
+            ? { isCropping: false, recordingId: null, startFrame: 0, endFrame: 0 }
+            : state.crop,
+        comparison:
+          state.comparison.leftRecordingId === id || state.comparison.rightRecordingId === id
+            ? {
+                isComparing: false,
+                leftRecordingId: null,
+                rightRecordingId: null,
+                isPlaying: false,
+                currentFrameIndex: 0,
+                totalFrames: 0,
+              }
+            : state.comparison,
+      };
+    }),
+
+  toggleRecordingSelection: (id) =>
+    set((state) => {
+      const newSelected = new Set(state.selectedRecordingIds);
+      if (newSelected.has(id)) {
+        newSelected.delete(id);
+      } else {
+        newSelected.add(id);
+      }
+      return { selectedRecordingIds: newSelected };
+    }),
+
+  clearRecordingSelection: () => set({ selectedRecordingIds: new Set() }),
+
+  getRecordingById: (id) => get().recordingLibrary.find((r) => r.id === id),
+
+  renameRecording: (id, name) =>
+    set((state) => ({
+      recordingLibrary: state.recordingLibrary.map((r) =>
+        r.id === id
+          ? { ...r, data: { ...r.data, metadata: { ...r.data.metadata, name } } }
+          : r
+      ),
+    })),
+
+  mergeRecordings: (firstId, secondId) => {
+    const state = get();
+    const first = state.recordingLibrary.find((r) => r.id === firstId);
+    const second = state.recordingLibrary.find((r) => r.id === secondId);
+    if (!first || !second) return null;
+
+    const firstFrames = first.data.frames;
+    const secondFrames = second.data.frames;
+    const baseTimestamp = firstFrames[0].timestamp;
+    const firstEndTimestamp = firstFrames[firstFrames.length - 1].timestamp;
+    const timeOffset = firstEndTimestamp - baseTimestamp + 100;
+
+    const mergedFrames: RecordingFrame[] = [
+      ...firstFrames.map((f, i) => ({ ...f, index: i, timestamp: f.timestamp - baseTimestamp })),
+      ...secondFrames.map((f, i) => ({
+        ...f,
+        index: firstFrames.length + i,
+        timestamp: f.timestamp - secondFrames[0].timestamp + timeOffset,
+      })),
+    ];
+
+    const lastFrame = mergedFrames[mergedFrames.length - 1];
+    const mergedData: RecordingData = {
+      version: 1,
+      metadata: {
+        duration: lastFrame.timestamp,
+        frameCount: mergedFrames.length,
+        startTime: baseTimestamp,
+        endTime: baseTimestamp + lastFrame.timestamp,
+        createdAt: new Date().toISOString(),
+      },
+      frames: mergedFrames,
+    };
+
+    const newId = generateRecordingId();
+    const newEntry: RecordingEntry = { id: newId, data: mergedData };
+
+    set((s) => ({
+      recordingLibrary: [...s.recordingLibrary.filter((r) => r.id !== firstId && r.id !== secondId), newEntry],
+      selectedRecordingIds: new Set(),
+    }));
+
+    return newId;
+  },
+
+  startPlaybackById: (id) => {
+    const entry = get().recordingLibrary.find((r) => r.id === id);
+    if (!entry) return;
+    get().startPlayback(entry.data, id);
+  },
+
+  startCropping: (recordingId) => {
+    const entry = get().recordingLibrary.find((r) => r.id === recordingId);
+    if (!entry) return;
+    const frameCount = entry.data.frames.length;
+    set({
+      crop: {
+        isCropping: true,
+        recordingId,
+        startFrame: 0,
+        endFrame: frameCount - 1,
+      },
+    });
+  },
+
+  setCropStart: (frame) =>
+    set((state) => {
+      if (!state.crop.isCropping) return state;
+      const entry = state.recordingLibrary.find((r) => r.id === state.crop.recordingId);
+      if (!entry) return state;
+      const maxEnd = state.crop.endFrame - 1;
+      return {
+        crop: {
+          ...state.crop,
+          startFrame: Math.max(0, Math.min(frame, maxEnd)),
+        },
+      };
+    }),
+
+  setCropEnd: (frame) =>
+    set((state) => {
+      if (!state.crop.isCropping) return state;
+      const entry = state.recordingLibrary.find((r) => r.id === state.crop.recordingId);
+      if (!entry) return state;
+      const maxEnd = entry.data.frames.length - 1;
+      const minStart = state.crop.startFrame + 1;
+      return {
+        crop: {
+          ...state.crop,
+          endFrame: Math.max(minStart, Math.min(frame, maxEnd)),
+        },
+      };
+    }),
+
+  applyCrop: () => {
+    const state = get();
+    if (!state.crop.isCropping || !state.crop.recordingId) return false;
+    const entry = state.recordingLibrary.find((r) => r.id === state.crop.recordingId);
+    if (!entry) return false;
+
+    const { startFrame, endFrame } = state.crop;
+    const croppedFrames = entry.data.frames.slice(startFrame, endFrame + 1);
+    const firstOrigTs = croppedFrames[0].timestamp;
+    const renumberedFrames = croppedFrames.map((f, i) => ({
+      ...f,
+      index: i,
+      timestamp: f.timestamp - firstOrigTs,
+    }));
+
+    const lastFrame = renumberedFrames[renumberedFrames.length - 1];
+    const newData: RecordingData = {
+      ...entry.data,
+      metadata: {
+        ...entry.data.metadata,
+        duration: lastFrame.timestamp,
+        frameCount: renumberedFrames.length,
+      },
+      frames: renumberedFrames,
+    };
+
+    const wasPlaying = state.playback.playbackRecordingId === state.crop.recordingId;
+
+    set((s) => ({
+      recordingLibrary: s.recordingLibrary.map((r) =>
+        r.id === state.crop.recordingId ? { ...r, data: newData } : r
+      ),
+      crop: { isCropping: false, recordingId: null, startFrame: 0, endFrame: 0 },
+      playback: wasPlaying
+        ? {
+            ...s.playback,
+            playbackData: newData,
+            currentFrameIndex: 0,
+          }
+        : s.playback,
+    }));
+
+    return true;
+  },
+
+  cancelCrop: () =>
+    set({
+      crop: { isCropping: false, recordingId: null, startFrame: 0, endFrame: 0 },
+    }),
+
+  startComparison: (leftId, rightId) => {
+    const state = get();
+    const left = state.recordingLibrary.find((r) => r.id === leftId);
+    const right = state.recordingLibrary.find((r) => r.id === rightId);
+    if (!left || !right) return;
+    const totalFrames = Math.min(left.data.frames.length, right.data.frames.length);
+    set({
+      comparison: {
+        isComparing: true,
+        leftRecordingId: leftId,
+        rightRecordingId: rightId,
+        isPlaying: false,
+        currentFrameIndex: 0,
+        totalFrames,
+      },
+    });
+  },
+
+  stopComparison: () =>
+    set({
+      comparison: {
+        isComparing: false,
+        leftRecordingId: null,
+        rightRecordingId: null,
+        isPlaying: false,
+        currentFrameIndex: 0,
+        totalFrames: 0,
+      },
+    }),
+
+  setComparisonPlaying: (playing) =>
+    set((state) => ({
+      comparison: { ...state.comparison, isPlaying: playing },
+    })),
+
+  setComparisonFrame: (index) =>
+    set((state) => ({
+      comparison: {
+        ...state.comparison,
+        currentFrameIndex: Math.max(0, Math.min(index, state.comparison.totalFrames - 1)),
       },
     })),
 }));

@@ -44,6 +44,7 @@ export interface RecordingFrame {
 }
 
 export interface RecordingMetadata {
+  name?: string;
   duration: number;
   frameCount: number;
   startTime: number;
@@ -55,6 +56,11 @@ export interface RecordingData {
   version: 1;
   metadata: RecordingMetadata;
   frames: RecordingFrame[];
+}
+
+export interface RecordingEntry {
+  id: string;
+  data: RecordingData;
 }
 
 export type PlaybackSpeed = 0.5 | 1 | 2 | 4;
@@ -70,10 +76,27 @@ export interface PlaybackState {
   isPlaying: boolean;
   isPaused: boolean;
   playbackData: RecordingData | null;
+  playbackRecordingId: string | null;
   currentFrameIndex: number;
   playbackSpeed: PlaybackSpeed;
   isExporting: boolean;
   exportProgress: number;
+}
+
+export interface CropState {
+  isCropping: boolean;
+  recordingId: string | null;
+  startFrame: number;
+  endFrame: number;
+}
+
+export interface ComparisonState {
+  isComparing: boolean;
+  leftRecordingId: string | null;
+  rightRecordingId: string | null;
+  isPlaying: boolean;
+  currentFrameIndex: number;
+  totalFrames: number;
 }
 
 export const PLAYBACK_SPEEDS: PlaybackSpeed[] = [0.5, 1, 2, 4];

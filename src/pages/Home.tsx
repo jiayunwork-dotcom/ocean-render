@@ -7,6 +7,7 @@ import TimelineBar from '@/components/TimelineBar';
 import RecordingControls from '@/components/RecordingControls';
 import PostRecordingModal from '@/components/PostRecordingModal';
 import PlaybackBar from '@/components/PlaybackBar';
+import ComparisonPlayback from '@/components/ComparisonPlayback';
 import { ToastContainer, type ToastState, type ToastType } from '@/components/Toast';
 import { useAppStore } from '@/store/useAppStore';
 import { getWeatherParams } from '@/utils/weather';
@@ -136,6 +137,7 @@ export default function Home() {
 
   const recordingIntervalRef = useRef<number | null>(null);
   const playbackIntervalRef = useRef<number | null>(null);
+  const comparisonIntervalRef = useRef<number | null>(null);
   const toastIdRef = useRef(0);
   const prePlaybackTimelineStateRef = useRef<{
     isPlaying: boolean;
@@ -148,6 +150,8 @@ export default function Home() {
   const isTimelinePlaying = useAppStore((s) => s.timeline.isPlaying);
   const playbackCurrentFrame = useAppStore((s) => s.playback.currentFrameIndex);
   const playbackSpeed = useAppStore((s) => s.playback.playbackSpeed);
+  const isComparing = useAppStore((s) => s.comparison.isComparing);
+  const comparisonState = useAppStore((s) => s.comparison);
 
   const addToast = useCallback((message: string, type: ToastType = 'info') => {
     const id = ++toastIdRef.current;
@@ -170,13 +174,12 @@ export default function Home() {
       }
 
       const store = useAppStore.getState();
-      prePlaybackTimelineStateRef.current = {
-        isPlaying: store.timeline.isPlaying,
-        timeOfDay: store.timeline.timeOfDay,
-      };
-      store.setTimelinePlaying(false);
-      store.startPlayback(data as RecordingData);
-      addToast('加载成功，开始回放', 'success');
+      const id = store.addRecordingToLibrary(data as RecordingData);
+      if (id) {
+        addToast('加载成功，已添加到片段列表', 'success');
+      } else {
+        addToast('片段列表已满（最多5段）', 'error');
+      }
     } catch {
       addToast('文件读取失败: 无效的JSON格式', 'error');
     }
@@ -293,7 +296,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!isTimelinePlaying || isPlaybackActive) return;
+    if (!isTimelinePlaying || isPlaybackActive || isComparing) return;
 
     let animFrameId: number;
     let lastTime = performance.now();
@@ -316,7 +319,7 @@ export default function Home() {
     return () => {
       cancelAnimationFrame(animFrameId);
     };
-  }, [isTimelinePlaying, isPlaybackActive]);
+  }, [isTimelinePlaying, isPlaybackActive, isComparing]);
 
   useEffect(() => {
     if (!isRecording) {
@@ -363,7 +366,7 @@ export default function Home() {
   }, [isRecording]);
 
   useEffect(() => {
-    if (!isPlaybackActive || !sceneRef.current) {
+    if (!isPlaybackActive || !sceneRef.current || isComparing) {
       if (playbackIntervalRef.current) {
         clearInterval(playbackIntervalRef.current);
         playbackIntervalRef.current = null;
@@ -420,20 +423,20 @@ export default function Home() {
         playbackIntervalRef.current = null;
       }
     };
-  }, [isPlaybackActive, addToast]);
+  }, [isPlaybackActive, isComparing, addToast]);
 
   useEffect(() => {
-    if (!isPlaybackActive || !sceneRef.current) return;
+    if (!isPlaybackActive || !sceneRef.current || isComparing) return;
 
     const store = useAppStore.getState();
     const frame = store.playback.playbackData?.frames[playbackCurrentFrame];
     if (frame) {
       restoreFrameState(frame, sceneRef.current, store);
     }
-  }, [isPlaybackActive, playbackCurrentFrame]);
+  }, [isPlaybackActive, playbackCurrentFrame, isComparing]);
 
   useEffect(() => {
-    if (!isPlaybackActive || !sceneRef.current || isExporting) return;
+    if (!isPlaybackActive || !sceneRef.current || isExporting || isComparing) return;
 
     if (playbackIntervalRef.current) {
       clearInterval(playbackIntervalRef.current);
@@ -473,7 +476,115 @@ export default function Home() {
         clearInterval(playbackIntervalRef.current);
       }
     };
-  }, [playbackSpeed, isPlaybackActive, isExporting, addToast]);
+  }, [playbackSpeed, isPlaybackActive, isExporting, isComparing, addToast]);
+
+  useEffect(() => {
+    if (!isComparing || !sceneRef.current) {
+      if (comparisonIntervalRef.current) {
+        clearInterval(comparisonIntervalRef.current);
+        comparisonIntervalRef.current = null;
+      }
+      return;
+    }
+
+    const store = useAppStore.getState();
+    const leftEntry = store.recordingLibrary.find(r => r.id === comparisonState.leftRecordingId);
+    const rightEntry = store.recordingLibrary.find(r => r.id === comparisonState.rightRecordingId);
+    if (!leftEntry || !rightEntry) return;
+
+    if (prePlaybackTimelineStateRef.current === null) {
+      prePlaybackTimelineStateRef.current = {
+        isPlaying: store.timeline.isPlaying,
+        timeOfDay: store.timeline.timeOfDay,
+      };
+    }
+    store.setTimelinePlaying(false);
+
+    const canvas = canvasRef.current!;
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    const halfWidth = Math.floor(width / 2);
+
+    const renderComparisonFrame = () => {
+      const s = useAppStore.getState();
+      const idx = s.comparison.currentFrameIndex;
+      const left = s.recordingLibrary.find(r => r.id === s.comparison.leftRecordingId);
+      const right = s.recordingLibrary.find(r => r.id === s.comparison.rightRecordingId);
+      if (!left || !right || !sceneRef.current) return;
+
+      const leftIdx = Math.min(idx, left.data.frames.length - 1);
+      const rightIdx = Math.min(idx, right.data.frames.length - 1);
+
+      const leftFrame = left.data.frames[leftIdx];
+      restoreFrameState(leftFrame, sceneRef.current, s);
+      sceneRef.current.renderViewport(0, 0, halfWidth, height, width, height);
+
+      const rightFrame = right.data.frames[rightIdx];
+      restoreFrameState(rightFrame, sceneRef.current, s);
+      sceneRef.current.renderViewport(halfWidth, 0, halfWidth, height, width, height);
+    };
+
+    const advanceFrame = () => {
+      const s = useAppStore.getState();
+      if (!s.comparison.isPlaying) return;
+
+      const nextIdx = s.comparison.currentFrameIndex + 1;
+      if (nextIdx >= s.comparison.totalFrames) {
+        s.setComparisonPlaying(false);
+        addToast('对比回放完成', 'info');
+        return;
+      }
+      s.setComparisonFrame(nextIdx);
+    };
+
+    renderComparisonFrame();
+    comparisonIntervalRef.current = window.setInterval(advanceFrame, 100);
+
+    return () => {
+      if (comparisonIntervalRef.current) {
+        clearInterval(comparisonIntervalRef.current);
+        comparisonIntervalRef.current = null;
+      }
+    };
+  }, [isComparing, comparisonState.leftRecordingId, comparisonState.rightRecordingId, addToast]);
+
+  useEffect(() => {
+    if (!isComparing || !sceneRef.current) return;
+
+    const canvas = canvasRef.current!;
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    const halfWidth = Math.floor(width / 2);
+
+    const s = useAppStore.getState();
+    const left = s.recordingLibrary.find(r => r.id === comparisonState.leftRecordingId);
+    const right = s.recordingLibrary.find(r => r.id === comparisonState.rightRecordingId);
+    if (!left || !right) return;
+
+    const leftIdx = Math.min(comparisonState.currentFrameIndex, left.data.frames.length - 1);
+    const rightIdx = Math.min(comparisonState.currentFrameIndex, right.data.frames.length - 1);
+
+    const leftFrame = left.data.frames[leftIdx];
+    restoreFrameState(leftFrame, sceneRef.current, s);
+    sceneRef.current.renderViewport(0, 0, halfWidth, height, width, height);
+
+    const rightFrame = right.data.frames[rightIdx];
+    restoreFrameState(rightFrame, sceneRef.current, s);
+    sceneRef.current.renderViewport(halfWidth, 0, halfWidth, height, width, height);
+  }, [isComparing, comparisonState.currentFrameIndex, comparisonState.leftRecordingId, comparisonState.rightRecordingId]);
+
+  useEffect(() => {
+    if (!isComparing) return;
+    return () => {
+      const s = useAppStore.getState();
+      if (prePlaybackTimelineStateRef.current) {
+        const state = prePlaybackTimelineStateRef.current;
+        s.setTimelinePlaying(state.isPlaying);
+        s.setTimeOfDay(state.timeOfDay);
+        prePlaybackTimelineStateRef.current = null;
+      }
+    };
+  }, [isComparing]);
 
   const handleSaveRecording = useCallback(() => {
     if (completedRecording) {
@@ -494,6 +605,20 @@ export default function Home() {
       store.setTimelinePlaying(false);
       store.startPlayback(completedRecording);
       addToast('开始回放', 'info');
+    }
+    setShowPostModal(false);
+    setCompletedRecording(null);
+  }, [completedRecording, addToast]);
+
+  const handleAddToLibrary = useCallback(() => {
+    if (completedRecording) {
+      const store = useAppStore.getState();
+      const id = store.addRecordingToLibrary(completedRecording);
+      if (id) {
+        addToast('已添加到片段列表', 'success');
+      } else {
+        addToast('片段列表已满', 'error');
+      }
     }
     setShowPostModal(false);
     setCompletedRecording(null);
@@ -524,17 +649,19 @@ export default function Home() {
       <RecordingControls
         onLoadFile={handleLoadFile}
         onStop={handleStopRecording}
-        disabled={isPlaybackActive}
+        disabled={isPlaybackActive || isComparing}
       />
 
-      <div className={cn(isPlaybackActive && 'playback-controls-disabled')}>
+      <div className={cn((isPlaybackActive || isComparing) && 'playback-controls-disabled')}>
         <CameraToggle />
         <ControlPanel />
       </div>
 
       <StatsHUD />
 
-      {isPlaybackActive ? (
+      {isComparing ? (
+        <ComparisonPlayback />
+      ) : isPlaybackActive ? (
         <PlaybackBar onExport={handleExportMP4} />
       ) : (
         <TimelineBar />
@@ -546,6 +673,7 @@ export default function Home() {
           onSave={handleSaveRecording}
           onReplay={handleReplayRecording}
           onClose={handleCloseModal}
+          onAddToLibrary={handleAddToLibrary}
         />
       )}
 

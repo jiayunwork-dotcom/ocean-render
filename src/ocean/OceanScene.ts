@@ -422,6 +422,158 @@ export class OceanScene {
     this.renderer.setSize(width, height, false);
   }
 
+  renderViewport(
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    fullWidth: number,
+    fullHeight: number
+  ): void {
+    const store = useAppStore.getState();
+    const { environment, ships, render, camera } = store;
+
+    this.updateCameraMode(camera.mode);
+
+    if (camera.mode === 'orbit') {
+      this.orbitCamera.update(0);
+      this.syncCameraFromController(this.orbitCamera.camera);
+    } else {
+      this.firstPersonCamera.update(0, this.keyState);
+      this.syncCameraFromController(this.firstPersonCamera.camera);
+    }
+
+    this.updateSunDirection(environment.sunAzimuth, environment.sunElevation);
+
+    if (this.lastSkyPreset !== environment.skyPreset) {
+      this.skyMaterial.setPreset(environment.skyPreset);
+      this.lastSkyPreset = environment.skyPreset;
+    }
+
+    this.skyMaterial.setBlend(environment.skyBlendTo, environment.skyBlendFactor);
+    this.skyMaterial.updateTime(this.time);
+
+    const fftResult = this.oceanFFT.update(
+      environment.windSpeed,
+      deg2rad(environment.windDirection),
+      this.time
+    );
+
+    this.oceanMaterial.update(
+      this.time,
+      this.sunDir,
+      this.sunColor,
+      this.camera.position,
+      ships,
+      environment.windSpeed,
+      environment.nightFactor
+    );
+
+    this.oceanMesh.setWireframe(render.wireframe);
+    this.oceanMesh.setLODLevel(render.lodLevel);
+    this.oceanMesh.update(this.camera);
+
+    this.foamSystem.update(0, fftResult, ships);
+
+    this.updateShipMeshes(ships);
+
+    this.renderer.toneMapping = environment.toneMapping === 'aces'
+      ? THREE.ACESFilmicToneMapping
+      : THREE.ReinhardToneMapping;
+    this.renderer.toneMappingExposure = Math.pow(2, environment.exposure);
+
+    const originalAspect = this.camera.aspect;
+    this.camera.aspect = width / height;
+    this.camera.updateProjectionMatrix();
+
+    this.renderer.setViewport(x, y, width, height);
+    this.renderer.setScissor(x, y, width, height);
+    this.renderer.setScissorTest(true);
+    this.renderer.render(this.scene, this.camera);
+    this.renderer.setScissorTest(false);
+
+    this.camera.aspect = originalAspect;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setViewport(0, 0, fullWidth, fullHeight);
+  }
+
+  renderSplitScreen(): void {
+    const store = useAppStore.getState();
+    const { environment, ships, render, camera } = store;
+
+    this.updateCameraMode(camera.mode);
+
+    if (camera.mode === 'orbit') {
+      this.orbitCamera.update(0);
+      this.syncCameraFromController(this.orbitCamera.camera);
+    } else {
+      this.firstPersonCamera.update(0, this.keyState);
+      this.syncCameraFromController(this.firstPersonCamera.camera);
+    }
+
+    this.updateSunDirection(environment.sunAzimuth, environment.sunElevation);
+
+    if (this.lastSkyPreset !== environment.skyPreset) {
+      this.skyMaterial.setPreset(environment.skyPreset);
+      this.lastSkyPreset = environment.skyPreset;
+    }
+
+    this.skyMaterial.setBlend(environment.skyBlendTo, environment.skyBlendFactor);
+    this.skyMaterial.updateTime(this.time);
+
+    const fftResult = this.oceanFFT.update(
+      environment.windSpeed,
+      deg2rad(environment.windDirection),
+      this.time
+    );
+
+    this.oceanMaterial.update(
+      this.time,
+      this.sunDir,
+      this.sunColor,
+      this.camera.position,
+      ships,
+      environment.windSpeed,
+      environment.nightFactor
+    );
+
+    this.oceanMesh.setWireframe(render.wireframe);
+    this.oceanMesh.setLODLevel(render.lodLevel);
+    this.oceanMesh.update(this.camera);
+
+    this.foamSystem.update(0, fftResult, ships);
+    this.updateShipMeshes(ships);
+
+    this.renderer.toneMapping = environment.toneMapping === 'aces'
+      ? THREE.ACESFilmicToneMapping
+      : THREE.ReinhardToneMapping;
+    this.renderer.toneMappingExposure = Math.pow(2, environment.exposure);
+
+    const width = this.canvas.clientWidth;
+    const height = this.canvas.clientHeight;
+    const halfWidth = Math.floor(width / 2);
+
+    const originalAspect = this.camera.aspect;
+    this.camera.aspect = halfWidth / height;
+    this.camera.updateProjectionMatrix();
+
+    this.renderer.setViewport(0, 0, halfWidth, height);
+    this.renderer.setScissor(0, 0, halfWidth, height);
+    this.renderer.setScissorTest(true);
+    this.renderer.render(this.scene, this.camera);
+    this.renderer.setScissorTest(false);
+
+    this.renderer.setViewport(halfWidth, 0, halfWidth, height);
+    this.renderer.setScissor(halfWidth, 0, halfWidth, height);
+    this.renderer.setScissorTest(true);
+    this.renderer.render(this.scene, this.camera);
+    this.renderer.setScissorTest(false);
+
+    this.camera.aspect = originalAspect;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setViewport(0, 0, width, height);
+  }
+
   dispose(): void {
     this.stop();
 
