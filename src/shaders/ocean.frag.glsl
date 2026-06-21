@@ -12,6 +12,9 @@ uniform float uExposure;
 uniform int uToneMapping;
 uniform bool uFoamEnabled;
 uniform vec3 uScatteringColor;
+uniform vec3 uMoonDir;
+uniform vec3 uMoonColor;
+uniform float uNightFactor;
 
 varying vec3 vWorldPos;
 varying vec3 vNormal;
@@ -85,6 +88,17 @@ void main() {
 
     vec3 specularHighlight = specular * uSunColor * NdotL * 3.0;
     waterColor += specularHighlight;
+
+    if (uNightFactor > 0.01) {
+        vec3 moonL = normalize(uMoonDir);
+        vec3 moonH = normalize(V + moonL);
+        float moonNdotL = max(dot(N, moonL), 0.0);
+        float moonD = DistributionGGX(N, moonH, uRoughness * 1.5);
+        float moonG = GeometrySmith(N, V, moonL, uRoughness * 1.5);
+        vec3 moonSpec = moonD * moonG * F / max(4.0 * NdotV * moonNdotL, 0.0001);
+        vec3 moonHighlight = moonSpec * uMoonColor * moonNdotL * 2.0;
+        waterColor += moonHighlight * uNightFactor;
+    }
 
     if (uFoamEnabled) {
         waterColor = mix(waterColor, uFoamColor, vFoamIntensity);

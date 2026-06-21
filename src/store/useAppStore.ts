@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { deg2rad, clamp } from '../utils/math';
 
-export type SkyPreset = 'clear' | 'cloudy' | 'sunset';
+export type SkyPreset = 'clear' | 'cloudy' | 'sunset' | 'night';
 export type ToneMapping = 'reinhard' | 'aces';
 export type LODLevel = 'auto' | 'high' | 'medium' | 'low';
 export type CameraMode = 'orbit' | 'firstPerson';
@@ -14,6 +14,10 @@ export interface EnvironmentState {
   sunElevation: number;
   exposure: number;
   toneMapping: ToneMapping;
+  skyBlendFactor: number;
+  skyBlendFrom: SkyPreset;
+  skyBlendTo: SkyPreset;
+  nightFactor: number;
 }
 
 export interface Ship {
@@ -40,20 +44,35 @@ export interface StatsState {
   triangles: number;
 }
 
+export type TimelineOverrideParam = 'windSpeed' | 'sunAzimuth' | 'sunElevation';
+
+export interface TimelineState {
+  timeOfDay: number;
+  isPlaying: boolean;
+  overriddenParams: Set<TimelineOverrideParam>;
+}
+
 export interface AppState {
   environment: EnvironmentState;
   ships: Ship[];
   render: RenderState;
   camera: CameraState;
   stats: StatsState;
+  timeline: TimelineState;
 
-  setWindSpeed: (value: number) => void;
+  setWindSpeed: (value: number, fromTimeline?: boolean) => void;
   setWindDirection: (value: number) => void;
   setSkyPreset: (value: SkyPreset) => void;
-  setSunAzimuth: (value: number) => void;
-  setSunElevation: (value: number) => void;
+  setSunAzimuth: (value: number, fromTimeline?: boolean) => void;
+  setSunElevation: (value: number, fromTimeline?: boolean) => void;
   setExposure: (value: number) => void;
   setToneMapping: (value: ToneMapping) => void;
+
+  setTimeOfDay: (value: number) => void;
+  setTimelinePlaying: (value: boolean) => void;
+  setParamOverride: (param: TimelineOverrideParam, overridden: boolean) => void;
+  clearAllOverrides: () => void;
+  applyTimelineWeather: (windSpeed: number, sunAzimuth: number, sunElevation: number, skyPreset: SkyPreset, skyBlendFactor: number, skyBlendFrom: SkyPreset, skyBlendTo: SkyPreset, nightFactor: number) => void;
 
   addShip: (ship?: Partial<Ship>) => boolean;
   removeShip: (id: string) => void;
@@ -84,6 +103,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     sunElevation: 45,
     exposure: 0,
     toneMapping: 'aces',
+    skyBlendFactor: 0,
+    skyBlendFrom: 'clear',
+    skyBlendTo: 'clear',
+    nightFactor: 0,
   },
   ships: [],
   render: {
@@ -99,14 +122,24 @@ export const useAppStore = create<AppState>((set, get) => ({
     fps: 0,
     triangles: 0,
   },
+  timeline: {
+    timeOfDay: 12,
+    isPlaying: false,
+    overriddenParams: new Set<TimelineOverrideParam>(),
+  },
 
-  setWindSpeed: (value) =>
-    set((state) => ({
-      environment: {
-        ...state.environment,
-        windSpeed: clamp(value, 1, 30),
-      },
-    })),
+  setWindSpeed: (value, fromTimeline = false) =>
+    set((state) => {
+      if (!fromTimeline && state.timeline.isPlaying) {
+        const newOverrides = new Set(state.timeline.overriddenParams);
+        newOverrides.add('windSpeed');
+        return {
+          environment: { ...state.environment, windSpeed: clamp(value, 1, 30) },
+          timeline: { ...state.timeline, overriddenParams: newOverrides },
+        };
+      }
+      return { environment: { ...state.environment, windSpeed: clamp(value, 1, 30) } };
+    }),
 
   setWindDirection: (value) =>
     set((state) => ({
@@ -124,21 +157,31 @@ export const useAppStore = create<AppState>((set, get) => ({
       },
     })),
 
-  setSunAzimuth: (value) =>
-    set((state) => ({
-      environment: {
-        ...state.environment,
-        sunAzimuth: ((value % 360) + 360) % 360,
-      },
-    })),
+  setSunAzimuth: (value, fromTimeline = false) =>
+    set((state) => {
+      if (!fromTimeline && state.timeline.isPlaying) {
+        const newOverrides = new Set(state.timeline.overriddenParams);
+        newOverrides.add('sunAzimuth');
+        return {
+          environment: { ...state.environment, sunAzimuth: ((value % 360) + 360) % 360 },
+          timeline: { ...state.timeline, overriddenParams: newOverrides },
+        };
+      }
+      return { environment: { ...state.environment, sunAzimuth: ((value % 360) + 360) % 360 } };
+    }),
 
-  setSunElevation: (value) =>
-    set((state) => ({
-      environment: {
-        ...state.environment,
-        sunElevation: clamp(value, 0, 90),
-      },
-    })),
+  setSunElevation: (value, fromTimeline = false) =>
+    set((state) => {
+      if (!fromTimeline && state.timeline.isPlaying) {
+        const newOverrides = new Set(state.timeline.overriddenParams);
+        newOverrides.add('sunElevation');
+        return {
+          environment: { ...state.environment, sunElevation: clamp(value, -30, 90) },
+          timeline: { ...state.timeline, overriddenParams: newOverrides },
+        };
+      }
+      return { environment: { ...state.environment, sunElevation: clamp(value, -30, 90) } };
+    }),
 
   setExposure: (value) =>
     set((state) => ({
@@ -155,6 +198,52 @@ export const useAppStore = create<AppState>((set, get) => ({
         toneMapping: value,
       },
     })),
+
+  setTimeOfDay: (value) =>
+    set((state) => ({
+      timeline: { ...state.timeline, timeOfDay: ((value % 24) + 24) % 24 },
+    })),
+
+  setTimelinePlaying: (value) =>
+    set((state) => ({
+      timeline: { ...state.timeline, isPlaying: value },
+    })),
+
+  setParamOverride: (param, overridden) =>
+    set((state) => {
+      const newOverrides = new Set(state.timeline.overriddenParams);
+      if (overridden) {
+        newOverrides.add(param);
+      } else {
+        newOverrides.delete(param);
+      }
+      return { timeline: { ...state.timeline, overriddenParams: newOverrides } };
+    }),
+
+  clearAllOverrides: () =>
+    set((state) => ({
+      timeline: { ...state.timeline, overriddenParams: new Set<TimelineOverrideParam>() },
+    })),
+
+  applyTimelineWeather: (windSpeed, sunAzimuth, sunElevation, skyPreset, skyBlendFactor, skyBlendFrom, skyBlendTo, nightFactor) =>
+    set((state) => {
+      const env = { ...state.environment };
+      if (!state.timeline.overriddenParams.has('windSpeed')) {
+        env.windSpeed = clamp(windSpeed, 1, 30);
+      }
+      if (!state.timeline.overriddenParams.has('sunAzimuth')) {
+        env.sunAzimuth = ((sunAzimuth % 360) + 360) % 360;
+      }
+      if (!state.timeline.overriddenParams.has('sunElevation')) {
+        env.sunElevation = clamp(sunElevation, -30, 90);
+      }
+      env.skyPreset = skyPreset;
+      env.skyBlendFactor = skyBlendFactor;
+      env.skyBlendFrom = skyBlendFrom;
+      env.skyBlendTo = skyBlendTo;
+      env.nightFactor = nightFactor;
+      return { environment: env };
+    }),
 
   addShip: (ship) => {
     const currentShips = get().ships;

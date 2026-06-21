@@ -250,12 +250,18 @@ export class OceanScene {
       Math.sin(phi) * Math.sin(theta)
     ).normalize();
 
-    const elevationFactor = elevation / 90;
-    this.sunColor.copy(SUNSET_COLOR).lerp(NOON_COLOR, Math.pow(elevationFactor, 0.5));
+    const clampedElevation = Math.max(elevation, 0);
+    const elevationFactor = clampedElevation / 90;
+
+    if (elevation < 0) {
+      this.sunColor.set(0x1a1a3e);
+    } else {
+      this.sunColor.copy(SUNSET_COLOR).lerp(NOON_COLOR, Math.pow(elevationFactor, 0.5));
+    }
 
     this.sunLight.position.copy(this.sunDir).multiplyScalar(1000);
     this.sunLight.color.copy(this.sunColor);
-    this.sunLight.intensity = 0.3 + elevationFactor * 1.2;
+    this.sunLight.intensity = elevation < 0 ? 0.05 : 0.3 + elevationFactor * 1.2;
 
     this.skyMaterial.updateSunDirection(azimuth, elevation);
   }
@@ -334,6 +340,12 @@ export class OceanScene {
 
     this.updateSunDirection(environment.sunAzimuth, environment.sunElevation);
 
+    if (this.lastSkyPreset !== environment.skyPreset) {
+      this.skyMaterial.setPreset(environment.skyPreset);
+      this.lastSkyPreset = environment.skyPreset;
+    }
+
+    this.skyMaterial.setBlend(environment.skyBlendTo, environment.skyBlendFactor);
     this.skyMaterial.updateTime(this.time);
 
     const fftResult = this.oceanFFT.update(
@@ -348,7 +360,8 @@ export class OceanScene {
       this.sunColor,
       this.camera.position,
       ships,
-      environment.windSpeed
+      environment.windSpeed,
+      environment.nightFactor
     );
 
     this.oceanMesh.setWireframe(render.wireframe);

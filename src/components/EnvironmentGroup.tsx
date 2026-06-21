@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { Wind, Sun, ChevronDown, ChevronUp } from 'lucide-react';
 import Slider from './Slider';
 import Knob from './Knob';
-import { useAppStore, type SkyPreset, type ToneMapping } from '@/store/useAppStore';
+import { useAppStore, type SkyPreset, type ToneMapping, type TimelineOverrideParam } from '@/store/useAppStore';
 import { cn } from '@/lib/utils';
 
 const skyPresetOptions: { value: SkyPreset; label: string }[] = [
   { value: 'clear', label: 'Clear' },
   { value: 'cloudy', label: 'Cloudy' },
   { value: 'sunset', label: 'Sunset' },
+  { value: 'night', label: 'Night' },
 ];
 
 const toneMappingOptions: { value: ToneMapping; label: string }[] = [
@@ -20,6 +21,8 @@ export default function EnvironmentGroup() {
   const [collapsed, setCollapsed] = useState(false);
 
   const environment = useAppStore((state) => state.environment);
+  const overriddenParams = useAppStore((state) => state.timeline.overriddenParams);
+  const isPlaying = useAppStore((state) => state.timeline.isPlaying);
   const setWindSpeed = useAppStore((state) => state.setWindSpeed);
   const setWindDirection = useAppStore((state) => state.setWindDirection);
   const setSkyPreset = useAppStore((state) => state.setSkyPreset);
@@ -27,6 +30,11 @@ export default function EnvironmentGroup() {
   const setSunElevation = useAppStore((state) => state.setSunElevation);
   const setExposure = useAppStore((state) => state.setExposure);
   const setToneMapping = useAppStore((state) => state.setToneMapping);
+  const setParamOverride = useAppStore((state) => state.setParamOverride);
+
+  const handleOverrideToggle = (param: TimelineOverrideParam) => {
+    setParamOverride(param, !overriddenParams.has(param));
+  };
 
   return (
     <div className={cn('glass-panel-light overflow-hidden')}>
@@ -58,6 +66,8 @@ export default function EnvironmentGroup() {
                 value={environment.windSpeed}
                 onChange={setWindSpeed}
                 unit="m/s"
+                overridden={overriddenParams.has('windSpeed')}
+                onOverrideToggle={isPlaying ? () => handleOverrideToggle('windSpeed') : undefined}
               />
             </div>
             <Knob
@@ -69,7 +79,7 @@ export default function EnvironmentGroup() {
 
           <div className="space-y-2">
             <span className="hud-label">Sky Preset</span>
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-4 gap-1.5">
               {skyPresetOptions.map((opt) => (
                 <button
                   key={opt.value}
@@ -100,15 +110,19 @@ export default function EnvironmentGroup() {
               value={environment.sunAzimuth}
               onChange={setSunAzimuth}
               unit="°"
+              overridden={overriddenParams.has('sunAzimuth')}
+              onOverrideToggle={isPlaying ? () => handleOverrideToggle('sunAzimuth') : undefined}
             />
             <Slider
               label="Elevation"
-              min={0}
+              min={-30}
               max={90}
               step={1}
               value={environment.sunElevation}
               onChange={setSunElevation}
               unit="°"
+              overridden={overriddenParams.has('sunElevation')}
+              onOverrideToggle={isPlaying ? () => handleOverrideToggle('sunElevation') : undefined}
             />
           </div>
 

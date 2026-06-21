@@ -1,6 +1,8 @@
 uniform vec3 uSunDir;
 uniform float uSunElevation;
 uniform int uPreset;
+uniform int uPresetTo;
+uniform float uPresetBlend;
 uniform float uTime;
 
 varying vec2 vUv;
@@ -49,19 +51,29 @@ float fbm(vec2 p) {
     return value;
 }
 
-vec3 rayleighScattering(vec3 dir, vec3 sunDir) {
+vec3 rayleighForPreset(vec3 dir, vec3 sunDir, int preset) {
     float sunDot = max(dot(dir, sunDir), 0.0);
     float rayleigh = pow(1.0 - max(dot(dir, vec3(0.0, 1.0, 0.0)), 0.0), 4.0);
     vec3 skyColor;
-    if (uPreset == 0) {
+    if (preset == 0) {
         skyColor = mix(vec3(0.3, 0.6, 1.0), vec3(0.1, 0.3, 0.8), rayleigh);
-    } else if (uPreset == 1) {
+    } else if (preset == 1) {
         skyColor = mix(vec3(0.6, 0.65, 0.7), vec3(0.4, 0.45, 0.5), rayleigh);
-    } else {
+    } else if (preset == 2) {
         float t = clamp(uSunElevation, 0.0, 1.0);
         vec3 horizonColor = mix(vec3(1.0, 0.4, 0.1), vec3(0.1, 0.05, 0.2), 1.0 - t);
         vec3 zenithColor = mix(vec3(0.8, 0.3, 0.2), vec3(0.05, 0.02, 0.15), 1.0 - t);
         skyColor = mix(horizonColor, zenithColor, rayleigh);
+    } else {
+        skyColor = mix(vec3(0.04, 0.04, 0.14), vec3(0.01, 0.01, 0.06), rayleigh);
+        vec3 moonDir = vec3(-sunDir.x, max(sunDir.y, 0.3), -sunDir.z);
+        moonDir = normalize(moonDir);
+        float moonDot = max(dot(dir, moonDir), 0.0);
+        float moonGlow = pow(moonDot, 16.0) * 0.15;
+        skyColor += vec3(0.3, 0.35, 0.5) * moonGlow;
+        float starField = pow(max(snoise(dir.xz * 80.0 + dir.y * 40.0), 0.0), 20.0);
+        float starMask = smoothstep(0.2, 0.8, dir.y);
+        skyColor += vec3(0.8, 0.85, 1.0) * starField * starMask * 0.4;
     }
     vec3 sunColor = vec3(1.0, 0.95, 0.8);
     float sunIntensity = pow(sunDot, 8.0);
@@ -83,23 +95,30 @@ float cloudLayer(vec2 uv, float time) {
     return clouds;
 }
 
-void main() {
-    vec3 dir = normalize(vWorldPos);
-    vec3 sunDir = normalize(uSunDir);
+vec3 computeSkyForPreset(vec3 dir, vec3 sunDir, int preset) {
+    vec3 color = rayleighForPreset(dir, sunDir, preset);
 
-    vec3 color = rayleighScattering(dir, sunDir);
-
-    float sun = sunDisc(dir, sunDir);
-    vec3 sunDiscColor;
-    if (uPreset == 2) {
-        sunDiscColor = mix(vec3(1.0, 0.6, 0.2), vec3(1.0, 0.9, 0.7), clamp(uSunElevation, 0.0, 1.0));
+    if (preset == 3) {
+        vec3 moonDir = vec3(-sunDir.x, max(sunDir.y, 0.3), -sunDir.z);
+        moonDir = normalize(moonDir);
+        float moonAngle = acos(dot(dir, moonDir));
+        float moonDisc = smoothstep(0.025, 0.018, moonAngle);
+        float moonGlow = smoothstep(0.15, 0.02, moonAngle) * 0.3;
+        vec3 moonColor = vec3(0.75, 0.8, 0.9);
+        color += moonColor * (moonDisc + moonGlow);
     } else {
-        sunDiscColor = vec3(1.0, 0.98, 0.9);
+        float sun = sunDisc(dir, sunDir);
+        vec3 sunDiscColor;
+        if (preset == 2) {
+            sunDiscColor = mix(vec3(1.0, 0.6, 0.2), vec3(1.0, 0.9, 0.7), clamp(uSunElevation, 0.0, 1.0));
+        } else {
+            sunDiscColor = vec3(1.0, 0.98, 0.9);
+        }
+        color += sunDiscColor * sun;
     }
-    color += sunDiscColor * sun;
 
-    if (uPreset == 1 || uPreset == 0) {
-        float cloudAmount = (uPreset == 1) ? 0.8 : 0.25;
+    if (preset == 1 || preset == 0) {
+        float cloudAmount = (preset == 1) ? 0.8 : 0.25;
         vec2 cloudUv = dir.xz / max(dir.y, 0.1) * 0.5;
         float clouds = cloudLayer(cloudUv, uTime) * cloudAmount;
         clouds *= smoothstep(0.0, 0.2, dir.y);
@@ -107,10 +126,35 @@ void main() {
         color = mix(color, cloudColor, clouds);
     }
 
-    if (uPreset == 2) {
+    if (preset == 3) {
+        float cloudAmount = 0.15;
+        vec2 cloudUv = dir.xz / max(dir.y, 0.1) * 0.5;
+        float clouds = cloudLayer(cloudUv, uTime) * cloudAmount;
+        clouds *= smoothstep(0.0, 0.2, dir.y);
+        vec3 cloudColor = vec3(0.06, 0.06, 0.12);
+        color = mix(color, cloudColor, clouds);
+    }
+
+    if (preset == 2) {
         float horizonFactor = 1.0 - abs(dir.y);
         vec3 sunsetHaze = mix(vec3(1.0, 0.3, 0.0), vec3(0.5, 0.1, 0.2), 1.0 - clamp(uSunElevation, 0.0, 1.0));
         color = mix(color, sunsetHaze, pow(horizonFactor, 3.0) * 0.6);
+    }
+
+    return color;
+}
+
+void main() {
+    vec3 dir = normalize(vWorldPos);
+    vec3 sunDir = normalize(uSunDir);
+
+    vec3 color;
+    if (uPresetBlend > 0.001 && uPreset != uPresetTo) {
+        vec3 colorFrom = computeSkyForPreset(dir, sunDir, uPreset);
+        vec3 colorTo = computeSkyForPreset(dir, sunDir, uPresetTo);
+        color = mix(colorFrom, colorTo, uPresetBlend);
+    } else {
+        color = computeSkyForPreset(dir, sunDir, uPreset);
     }
 
     color = pow(color, vec3(1.0 / 2.2));

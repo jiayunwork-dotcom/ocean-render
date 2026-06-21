@@ -49,6 +49,9 @@ export class OceanMaterial extends THREE.ShaderMaterial {
         uShipPositions: { value: [new THREE.Vector2(), new THREE.Vector2(), new THREE.Vector2()] },
         uShipHeadings: { value: [0, 0, 0] },
         uShipSpeeds: { value: [0, 0, 0] },
+        uMoonDir: { value: new THREE.Vector3(0, 1, 0) },
+        uMoonColor: { value: new THREE.Color(0xc0c8e0) },
+        uNightFactor: { value: 0 },
       },
     });
   }
@@ -59,7 +62,8 @@ export class OceanMaterial extends THREE.ShaderMaterial {
     sunColor: THREE.Color,
     cameraPos: THREE.Vector3,
     ships: Ship[],
-    windSpeed: number
+    windSpeed: number,
+    nightFactor: number = 0
   ): void {
     this.uniforms.uTime.value = time;
     this.uniforms.uSunDir.value.copy(sunDir);
@@ -84,5 +88,9 @@ export class OceanMaterial extends THREE.ShaderMaterial {
         this.uniforms.uShipSpeeds.value[i] = 0;
       }
     }
+
+    const moonDir = new THREE.Vector3(-sunDir.x, Math.max(-sunDir.y, 0.3), -sunDir.z).normalize();
+    (this.uniforms.uMoonDir.value as THREE.Vector3).copy(moonDir);
+    this.uniforms.uNightFactor.value = nightFactor;
   }
 }

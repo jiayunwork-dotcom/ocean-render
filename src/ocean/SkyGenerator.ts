@@ -42,6 +42,15 @@ const PRESET_COLORS: Record<SkyPreset, SkyPresetColors> = {
     cloudColor: new THREE.Color(0xff8060),
     cloudAmount: 0.4,
   },
+  night: {
+    horizonTop: new THREE.Color(0x0a0a2e),
+    horizonBottom: new THREE.Color(0x101035),
+    zenith: new THREE.Color(0x020210),
+    sun: new THREE.Color(0xc0c8e0),
+    sunGlow: new THREE.Color(0x4040a0),
+    cloudColor: new THREE.Color(0x151530),
+    cloudAmount: 0.15,
+  },
 };
 
 const CUBE_FACES = [
@@ -64,7 +73,9 @@ export class SkyMaterial extends THREE.ShaderMaterial {
       uniforms: {
         uSunDir: { value: new THREE.Vector3(0.5, 0.7, 0.3).normalize() },
         uSunElevation: { value: 0.7 },
-        uPreset: { value: preset === 'clear' ? 0 : preset === 'cloudy' ? 1 : 2 },
+        uPreset: { value: preset === 'clear' ? 0 : preset === 'cloudy' ? 1 : preset === 'sunset' ? 2 : 3 },
+        uPresetTo: { value: 0 },
+        uPresetBlend: { value: 0 },
         uTime: { value: 0 },
       },
     });
@@ -79,7 +90,7 @@ export class SkyMaterial extends THREE.ShaderMaterial {
       Math.cos(elevationRad) * Math.cos(azimuthRad)
     ).normalize();
     (this.uniforms.uSunDir.value as THREE.Vector3).copy(sunDir);
-    this.uniforms.uSunElevation.value = Math.max(0, Math.sin(elevationRad));
+    this.uniforms.uSunElevation.value = Math.sin(elevationRad);
   }
 
   updateTime(time: number): void {
@@ -87,7 +98,14 @@ export class SkyMaterial extends THREE.ShaderMaterial {
   }
 
   setPreset(preset: SkyPreset): void {
-    this.uniforms.uPreset.value = preset === 'clear' ? 0 : preset === 'cloudy' ? 1 : 2;
+    this.uniforms.uPreset.value =
+      preset === 'clear' ? 0 : preset === 'cloudy' ? 1 : preset === 'sunset' ? 2 : 3;
+  }
+
+  setBlend(presetTo: SkyPreset, blendFactor: number): void {
+    this.uniforms.uPresetTo.value =
+      presetTo === 'clear' ? 0 : presetTo === 'cloudy' ? 1 : presetTo === 'sunset' ? 2 : 3;
+    this.uniforms.uPresetBlend.value = blendFactor;
   }
 }
 
