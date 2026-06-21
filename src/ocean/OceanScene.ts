@@ -465,4 +465,33 @@ export class OceanScene {
       triangles: this.oceanMesh.getTriangleCount(),
     };
   }
+
+  getCameraState(): { px: number; py: number; pz: number; rx: number; ry: number; rz: number } {
+    const euler = new THREE.Euler().setFromQuaternion(this.camera.quaternion, 'YXZ');
+    return {
+      px: this.camera.position.x,
+      py: this.camera.position.y,
+      pz: this.camera.position.z,
+      rx: euler.x,
+      ry: euler.y,
+      rz: euler.z,
+    };
+  }
+
+  setCameraState(state: { px: number; py: number; pz: number; rx: number; ry: number; rz: number }): void {
+    this.camera.position.set(state.px, state.py, state.pz);
+    const euler = new THREE.Euler(state.rx, state.ry, state.rz, 'YXZ');
+    this.camera.quaternion.setFromEuler(euler);
+    this.camera.updateMatrixWorld(true);
+
+    if (this.activeCameraMode === 'orbit') {
+      this.syncControllerFromCamera(this.orbitCamera.camera);
+    } else {
+      this.syncControllerFromCamera(this.firstPersonCamera.camera);
+      const forward = new THREE.Vector3();
+      this.camera.getWorldDirection(forward);
+      this.firstPersonCamera['yaw'] = Math.atan2(forward.x, forward.z);
+      this.firstPersonCamera['pitch'] = Math.asin(forward.y);
+    }
+  }
 }

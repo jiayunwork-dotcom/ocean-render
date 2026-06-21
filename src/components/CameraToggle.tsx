@@ -12,7 +12,7 @@ export default function CameraToggle() {
   const setCameraMode = useAppStore((state) => state.setCameraMode);
 
   return (
-    <div className="fixed top-4 left-4 z-50">
+    <div className="fixed top-20 left-4 z-50">
       <div
         className={cn(
           'glass-panel-light p-1 flex gap-1 rounded-full shadow-lg'

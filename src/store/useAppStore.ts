@@ -1,5 +1,13 @@
 import { create } from 'zustand';
 import { deg2rad, clamp } from '../utils/math';
+import type {
+  RecordingState,
+  PlaybackState,
+  RecordingFrame,
+  RecordingData,
+  PlaybackSpeed,
+} from './recordingTypes';
+import { PLAYBACK_SPEEDS } from './recordingTypes';
 
 export type SkyPreset = 'clear' | 'cloudy' | 'sunset' | 'night';
 export type ToneMapping = 'reinhard' | 'aces';
@@ -59,6 +67,8 @@ export interface AppState {
   camera: CameraState;
   stats: StatsState;
   timeline: TimelineState;
+  recording: RecordingState;
+  playback: PlaybackState;
 
   setWindSpeed: (value: number, fromTimeline?: boolean) => void;
   setWindDirection: (value: number) => void;
@@ -88,6 +98,20 @@ export interface AppState {
 
   setFps: (value: number) => void;
   setTriangles: (value: number) => void;
+
+  startRecording: () => void;
+  stopRecording: () => RecordingData | null;
+  addRecordingFrame: (frame: RecordingFrame) => boolean;
+  setRecordingDuration: (duration: number) => void;
+
+  startPlayback: (data: RecordingData) => void;
+  stopPlayback: () => void;
+  pausePlayback: () => void;
+  resumePlayback: () => void;
+  setPlaybackFrame: (index: number) => void;
+  setPlaybackSpeed: (speed: PlaybackSpeed) => void;
+  setExporting: (exporting: boolean) => void;
+  setExportProgress: (progress: number) => void;
 }
 
 const MAX_SHIPS = 3;
@@ -126,6 +150,21 @@ export const useAppStore = create<AppState>((set, get) => ({
     timeOfDay: 12,
     isPlaying: false,
     overriddenParams: new Set<TimelineOverrideParam>(),
+  },
+  recording: {
+    isRecording: false,
+    recordingStartTime: 0,
+    recordedFrames: [],
+    currentRecordingDuration: 0,
+  },
+  playback: {
+    isPlaying: false,
+    isPaused: false,
+    playbackData: null,
+    currentFrameIndex: 0,
+    playbackSpeed: 1,
+    isExporting: false,
+    exportProgress: 0,
   },
 
   setWindSpeed: (value, fromTimeline = false) =>
@@ -343,6 +382,156 @@ export const useAppStore = create<AppState>((set, get) => ({
       stats: {
         ...state.stats,
         triangles: value,
+      },
+    })),
+
+  startRecording: () =>
+    set({
+      recording: {
+        isRecording: true,
+        recordingStartTime: Date.now(),
+        recordedFrames: [],
+        currentRecordingDuration: 0,
+      },
+    }),
+
+  stopRecording: () => {
+    const state = get();
+    if (!state.recording.isRecording || state.recording.recordedFrames.length === 0) {
+      set({
+        recording: {
+          isRecording: false,
+          recordingStartTime: 0,
+          recordedFrames: [],
+          currentRecordingDuration: 0,
+        },
+      });
+      return null;
+    }
+
+    const frames = state.recording.recordedFrames;
+    const firstFrame = frames[0];
+    const lastFrame = frames[frames.length - 1];
+
+    const recordingData: RecordingData = {
+      version: 1,
+      metadata: {
+        duration: lastFrame.timestamp - firstFrame.timestamp,
+        frameCount: frames.length,
+        startTime: firstFrame.timestamp,
+        endTime: lastFrame.timestamp,
+        createdAt: new Date().toISOString(),
+      },
+      frames,
+    };
+
+    set({
+      recording: {
+        isRecording: false,
+        recordingStartTime: 0,
+        recordedFrames: [],
+        currentRecordingDuration: 0,
+      },
+    });
+
+    return recordingData;
+  },
+
+  addRecordingFrame: (frame) => {
+    const state = get();
+    if (!state.recording.isRecording) return false;
+    if (state.recording.recordedFrames.length >= 3000) {
+      return false;
+    }
+    set((s) => ({
+      recording: {
+        ...s.recording,
+        recordedFrames: [...s.recording.recordedFrames, frame],
+      },
+    }));
+    return true;
+  },
+
+  setRecordingDuration: (duration) =>
+    set((state) => ({
+      recording: {
+        ...state.recording,
+        currentRecordingDuration: duration,
+      },
+    })),
+
+  startPlayback: (data) =>
+    set({
+      playback: {
+        isPlaying: true,
+        isPaused: false,
+        playbackData: data,
+        currentFrameIndex: 0,
+        playbackSpeed: 1,
+        isExporting: false,
+        exportProgress: 0,
+      },
+    }),
+
+  stopPlayback: () =>
+    set({
+      playback: {
+        isPlaying: false,
+        isPaused: false,
+        playbackData: null,
+        currentFrameIndex: 0,
+        playbackSpeed: 1,
+        isExporting: false,
+        exportProgress: 0,
+      },
+    }),
+
+  pausePlayback: () =>
+    set((state) => ({
+      playback: {
+        ...state.playback,
+        isPaused: true,
+      },
+    })),
+
+  resumePlayback: () =>
+    set((state) => ({
+      playback: {
+        ...state.playback,
+        isPaused: false,
+      },
+    })),
+
+  setPlaybackFrame: (index) =>
+    set((state) => ({
+      playback: {
+        ...state.playback,
+        currentFrameIndex: Math.max(0, Math.min(index, state.playback.playbackData?.frames.length ? state.playback.playbackData.frames.length - 1 : 0)),
+      },
+    })),
+
+  setPlaybackSpeed: (speed) =>
+    set((state) => ({
+      playback: {
+        ...state.playback,
+        playbackSpeed: PLAYBACK_SPEEDS.includes(speed) ? speed : state.playback.playbackSpeed,
+      },
+    })),
+
+  setExporting: (exporting) =>
+    set((state) => ({
+      playback: {
+        ...state.playback,
+        isExporting: exporting,
+        exportProgress: exporting ? 0 : state.playback.exportProgress,
+      },
+    })),
+
+  setExportProgress: (progress) =>
+    set((state) => ({
+      playback: {
+        ...state.playback,
+        exportProgress: Math.max(0, Math.min(100, progress)),
       },
     })),
 }));
